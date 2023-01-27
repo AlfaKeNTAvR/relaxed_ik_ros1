@@ -65,6 +65,7 @@ add_service_files(
    RelaxedIKSolution.srv
    IKSolution.srv
    SelfCollisionQuery.srv
+   activate_ik.srv
 )
 
 ## Generate actions in the 'action' folder

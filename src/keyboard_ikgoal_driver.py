@@ -28,27 +28,6 @@ rotation_l = [1,0,0,0]
 seq = 1
 rate = rospy.Rate(1000)
 while not rospy.is_shutdown():
-    pose = PoseStamped()
-    pose.pose.position.x = position_r[0]
-    pose.pose.position.y = position_r[1]
-    pose.pose.position.z = position_r[2]
-
-    pose.pose.orientation.w = rotation_r[0]
-    pose.pose.orientation.x = rotation_r[1]
-    pose.pose.orientation.y = rotation_r[2]
-    pose.pose.orientation.z = rotation_r[3]
-    ik_goal_r_pub.publish(pose)
-
-    pose = PoseStamped()
-    pose.pose.position.x = position_l[0]
-    pose.pose.position.y = position_l[1]
-    pose.pose.position.z = position_l[2]
-
-    pose.pose.orientation.w = rotation_l[0]
-    pose.pose.orientation.x = rotation_l[1]
-    pose.pose.orientation.y = rotation_l[2]
-    pose.pose.orientation.z = rotation_l[3]
-    ik_goal_l_pub.publish(pose)
 
     print("Pos R: {}, Pos L: {}".format(position_r, position_l))
 
@@ -132,41 +111,6 @@ while not rospy.is_shutdown():
         quit_pub.publish(q)
     elif key == 'c':
         rospy.signal_shutdown()
-
-    pose = PoseStamped()
-    pose.pose.position.x = position_r[0]
-    pose.pose.position.y = position_r[1]
-    pose.pose.position.z = position_r[2]
-
-    pose.pose.orientation.w = rotation_r[0]
-    pose.pose.orientation.x = rotation_r[1]
-    pose.pose.orientation.y = rotation_r[2]
-    pose.pose.orientation.z = rotation_r[3]
-    ik_goal_r_pub.publish(pose)
-
-    pose = PoseStamped()
-    pose.pose.position.x = position_l[0]
-    pose.pose.position.y = position_l[1]
-    pose.pose.position.z = position_l[2]
-
-    pose.pose.orientation.w = rotation_l[0]
-    pose.pose.orientation.x = rotation_l[1]
-    pose.pose.orientation.y = rotation_l[2]
-    pose.pose.orientation.z = rotation_l[3]
-    ik_goal_l_pub.publish(pose)
-
-    pos_goal = Vector3Stamped()
-    pos_goal.vector.x = position_r[0]
-    pos_goal.vector.y = position_r[1]
-    pos_goal.vector.z = position_r[2]
-    goal_pos_pub.publish(pos_goal)
-
-    quat_goal = QuaternionStamped()
-    quat_goal.quaternion.w = rotation_r[0]
-    quat_goal.quaternion.x = rotation_r[1]
-    quat_goal.quaternion.y = rotation_r[2]
-    quat_goal.quaternion.z = rotation_r[3]
-    goal_quat_pub.publish(quat_goal)
 
     ee_pose_goals = EEPoseGoals()
     pose_r = Pose()

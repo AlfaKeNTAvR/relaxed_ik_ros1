@@ -369,7 +369,6 @@ def main():
 
     delta_time = 0.01
     prev_sol = starting_config
-    print(starting_config)
 
     #Press r to reset marker's position
     '''key = readchar.readkey()
@@ -417,7 +416,6 @@ def main():
 
         if len(ja_solution) == 0:
             xopt = starting_config
-            print(starting_config)
         else:
             xopt = ja_solution
             if not len(xopt) == len(starting_config):
