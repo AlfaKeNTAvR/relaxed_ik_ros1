@@ -32,37 +32,6 @@ lib = ctypes.cdll.LoadLibrary(
 )
 lib.solve.restype = Opt
 
-
-def marker_feedback_cb(msg):
-    pos_arr = (ctypes.c_double * 3)()
-    quat_arr = (ctypes.c_double * 4)()
-    pos_arr[0] = msg.pose.position.x
-    pos_arr[1] = msg.pose.position.y
-    pos_arr[2] = msg.pose.position.z
-    quat_arr[0] = msg.pose.orientation.x
-    quat_arr[1] = msg.pose.orientation.y
-    quat_arr[2] = msg.pose.orientation.z
-    quat_arr[3] = msg.pose.orientation.w
-    # Call the rust callback function
-    lib.dynamic_obstacle_cb(msg.marker_name, pos_arr, quat_arr)
-
-
-def marker_update_cb(msg):
-    # update dynamic collision obstacles in relaxed IK
-    for pose_stamped in msg.poses:
-        pos_arr = (ctypes.c_double * 3)()
-        quat_arr = (ctypes.c_double * 4)()
-        pos_arr[0] = pose_stamped.pose.position.x
-        pos_arr[1] = pose_stamped.pose.position.y
-        pos_arr[2] = pose_stamped.pose.position.z
-        quat_arr[0] = pose_stamped.pose.orientation.x
-        quat_arr[1] = pose_stamped.pose.orientation.y
-        quat_arr[2] = pose_stamped.pose.orientation.z
-        quat_arr[3] = pose_stamped.pose.orientation.w
-        # Call the rust callback function
-        lib.dynamic_obstacle_cb(pose_stamped.name, pos_arr, quat_arr)
-
-
 eepg = None
 
 
