@@ -1,156 +1,194 @@
-#! /usr/bin/env python
+#!/usr/bin/env python
+"""
+
+"""
 
 import ctypes
-import numpy
 import os
 import rospkg
 import rospy
 import yaml
 
-from relaxed_ik_ros1.msg import EEPoseGoals
-from relaxed_ik_ros1.srv import activate_ik
-from std_msgs.msg import Float64
-from timeit import default_timer as timer
-from visualization_msgs.msg import InteractiveMarkerFeedback, InteractiveMarkerUpdate
+from relaxed_ik_ros1.msg import (EEPoseGoals)
 
-from kortex_driver.msg import JointAngles, JointAngle
-
-
-class Opt(ctypes.Structure):
-    _fields_ = [
-        ("data", ctypes.POINTER(ctypes.c_double)), ("length", ctypes.c_int)
-    ]
-
-
-path_to_src = rospkg.RosPack().get_path('relaxed_ik_ros1')
-env_settings_file_path = path_to_src + '/relaxed_ik_core/config/settings.yaml'
-
-os.chdir(path_to_src + "/relaxed_ik_core")
-
-lib = ctypes.cdll.LoadLibrary(
-    path_to_src + '/relaxed_ik_core/target/debug/librelaxed_ik_lib.so'
+from kortex_driver.msg import (
+    JointAngles,
+    JointAngle,
 )
-lib.solve.restype = Opt
-
-eepg = None
 
 
-def eePoseGoals_cb(msg):
-    global eepg
-    eepg = msg
+class RelaxedIK:
+    """
+    
+    """
 
+    def __init__(
+        self,
+        update_rate=750,
+    ):
+        """
+        
+        """
 
-# Turn relaxed IK calculation ON and OFF
-def activate_ik_handler(req):
-    global activateIk
+        class Opt(ctypes.Structure):
+            _fields_ = [
+                ('data', ctypes.POINTER(ctypes.c_double)),
+                ('length', ctypes.c_int)
+            ]
 
-    activateIk = req.command
-
-    return True
-
-
-def main(args=None):
-    global activateIk
-
-    rospy.init_node('relaxed_ik')
-
-    # Flags
-    activateIk = True
-
-    # Load the infomation
-    env_settings_file = open(env_settings_file_path, 'r')
-    env_settings = yaml.load(env_settings_file, Loader=yaml.FullLoader)
-
-    if 'loaded_robot' in env_settings:
-        robot_info = env_settings['loaded_robot']
-    else:
-        raise NameError('Please define the relevant information of the robot!')
-
-    info_file_name = robot_info['name']
-    robot_name = info_file_name.split('_')[0]
-    objective_mode = robot_info['objective_mode']
-    print(
-        "\nRelaxedIK initialized!\nRobot: {}\nObjective mode: {}\n".format(
-            robot_name, objective_mode
+        # # Private constants:
+        self.__PATH_TO_SRC = rospkg.RosPack().get_path('relaxed_ik_ros1')
+        self.__ENV_SETTINGS_FILE_PATH = (
+            f'{self.__PATH_TO_SRC}/relaxed_ik_core/config/settings.yaml'
         )
-    )
+        os.chdir(f'{self.__PATH_TO_SRC}/relaxed_ik_core')
+        self.__LIB = (
+            ctypes.cdll.LoadLibrary(
+                f'{self.__PATH_TO_SRC}/relaxed_ik_core/target/debug/librelaxed_ik_lib.so'
+            )
+        )
+        self.__LIB.solve.restype = Opt
 
-    # Publishers
-    angles_pub = rospy.Publisher(
-        '/relaxed_ik/joint_angle_solutions', JointAngles, queue_size=10
-    )
-    time_pub = rospy.Publisher(
-        '/relaxed_ik/current_time', Float64, queue_size=10
-    )
+        env_settings_file = open(self.__ENV_SETTINGS_FILE_PATH, 'r')
+        env_settings = yaml.load(
+            env_settings_file,
+            Loader=yaml.FullLoader,
+        )
 
-    # Services
-    activate_ik_srv = rospy.Service(
-        '/relaxed_ik/activate_ik', activate_ik, activate_ik_handler
-    )
+        if 'loaded_robot' in env_settings:
+            robot_info = env_settings['loaded_robot']
+        else:
+            raise NameError(
+                'Please define the relevant information of the robot!'
+            )
 
-    cur_time = 0.0
-    delta_time = 0.01
-    step = 1 / 30.0
+        info_file_name = robot_info['name']
 
-    global eepg
+        # # Public constants:
+        self.ROBOT_NAME = info_file_name.split('_')[0]
+        self.OBJECTIVE_MODE = robot_info['objective_mode']
+        self.RATE = rospy.Rate(update_rate)
 
-    rospy.Subscriber('/relaxed_ik/ee_pose_goals', EEPoseGoals, eePoseGoals_cb)
+        # # Private variables:
+        self.__ee_pose_goals = EEPoseGoals()
 
-    while eepg == None:
-        continue
+        # # Public variables:
+        self.is_initialized = False
 
-    rate = rospy.Rate(3000)
-    speed_list = []
+        # # ROS node:
+
+        # # Service provider:
+
+        # # Service subscriber:
+
+        # # Topic publisher:
+        self.__joint_angles_solutions = rospy.Publisher(
+            '/relaxed_ik/joint_angle_solutions',
+            JointAngles,
+            queue_size=1,
+        )
+
+        # # Topic subscriber:
+        rospy.Subscriber(
+            '/relaxed_ik/ee_pose_goals',
+            EEPoseGoals,
+            self.__ee_pose_goals_callback,
+        )
+
+        print('\nRelaxedIK initialized!')
+        print(f'\nRobot: {self.ROBOT_NAME}')
+        print(f'\nObjective mode: {self.OBJECTIVE_MODE}\n')
+        print('\nWaiting for the first goal pose...\n')
+
+    # # Service handlers:
+
+    # # Topic callbacks:
+    def __ee_pose_goals_callback(self, message):
+        """
+
+        """
+
+        if not self.is_initialized:
+            self.is_initialized = True
+
+            print('\nFirst goal pose was received!\n')
+
+        self.__ee_pose_goals = message
+
+    # # Private methods:
+
+    # # Public methods:
+    def main_loop(self):
+        """
+        
+        """
+
+        if not self.is_initialized:
+            return
+
+        ee_pose_goals = self.__ee_pose_goals.ee_poses
+        xopt = None
+
+        positions = (ctypes.c_double * (3 * len(ee_pose_goals)))()
+        quaternions = (ctypes.c_double * (4 * len(ee_pose_goals)))()
+
+        for i in range(len(ee_pose_goals)):
+            p = ee_pose_goals[i]
+            positions[3 * i] = p.position.x
+            positions[3 * i + 1] = p.position.y
+            positions[3 * i + 2] = p.position.z
+
+            quaternions[4 * i] = p.orientation.x
+            quaternions[4 * i + 1] = p.orientation.y
+            quaternions[4 * i + 2] = p.orientation.z
+            quaternions[4 * i + 3] = p.orientation.w
+
+            # With each solve function call it returns the next trajectory point
+            # in a form of joint angles solution.
+            xopt = self.__LIB.solve(
+                positions,
+                len(positions),
+                quaternions,
+                len(quaternions),
+            )
+
+        joint_angles = JointAngles()
+
+        if xopt:
+            for i in range(xopt.length):
+                joint_angle = JointAngle()
+                joint_angle.joint_identifier = i
+                joint_angle.value = xopt.data[i]
+                joint_angles.joint_angles.append(joint_angle)
+
+            self.__joint_angles_solutions.publish(joint_angles)
+
+        self.RATE.sleep()
+
+
+def node_shutdown():
+    """
+    
+    """
+
+    print('\nNode is shutting down...')
+
+    print("\nNode has shut down.")
+
+
+def main():
+    """
+    
+    """
+
+    # # ROS node:
+    rospy.init_node('relaxed_ik')
+    rospy.on_shutdown(node_shutdown)
+
+    relaxed_ik_solver = RelaxedIK(update_rate=1000)
+
     while not rospy.is_shutdown():
-        cur_time_msg = Float64()
-        cur_time_msg.data = cur_time
-        time_pub.publish(cur_time_msg)
-        cur_time += delta_time * step
-
-        pose_goals = eepg.ee_poses
-        pos_arr = (ctypes.c_double * (3 * len(pose_goals)))()
-        quat_arr = (ctypes.c_double * (4 * len(pose_goals)))()
-
-        for i in range(len(pose_goals)):
-            p = pose_goals[i]
-            pos_arr[3 * i] = p.position.x
-            pos_arr[3 * i + 1] = p.position.y
-            pos_arr[3 * i + 2] = p.position.z
-
-            quat_arr[4 * i] = p.orientation.x
-            quat_arr[4 * i + 1] = p.orientation.y
-            quat_arr[4 * i + 2] = p.orientation.z
-            quat_arr[4 * i + 3] = p.orientation.w
-
-        start = timer()
-        xopt = lib.solve(pos_arr, len(pos_arr), quat_arr, len(quat_arr))
-        end = timer()
-        speed = 1.0 / (end - start)
-        speed_list.append(speed)
-
-        ja = JointAngles()
-        ja_str = "["
-
-        for i in range(xopt.length):
-            joint_angle = JointAngle()
-            joint_angle.joint_identifier = i
-            joint_angle.value = (xopt.data[i])
-            ja.joint_angles.append(joint_angle)
-            ja_str += str(xopt.data[i])
-
-            if i == xopt.length - 1:
-                ja_str += "]"
-            else:
-                ja_str += ", "
-
-        if activateIk == True:
-            angles_pub.publish(ja)
-
-        rate.sleep()
-
-    print("Average speed: {} HZ".format(numpy.mean(speed_list)))
-    print("Min speed: {} HZ".format(numpy.min(speed_list)))
-    print("Max speed: {} HZ".format(numpy.max(speed_list)))
+        relaxed_ik_solver.main_loop()
 
 
 if __name__ == '__main__':
