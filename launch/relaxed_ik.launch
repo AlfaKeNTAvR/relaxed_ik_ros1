@@ -1,5 +1,9 @@
 <?xml version="1.0"?>
 <launch>=  
+    <arg name="robot_name" default="my_gen3"/>
+
     <!-- Start relaxed ik -->
-    <node pkg="relaxed_ik_ros1" type="relaxed_ik_rust.py" name="relaxed_ik" output="screen"/>
+    <node pkg="relaxed_ik_ros1" type="relaxed_ik_rust.py" name="relaxed_ik" output="screen">
+        <param name="robot_name" value="$(arg robot_name)"/>
+    </node>
 </launch>

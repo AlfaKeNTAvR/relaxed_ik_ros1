@@ -10,7 +10,6 @@ import rospy
 import yaml
 
 from relaxed_ik_ros1.msg import (EEPoseGoals)
-
 from kortex_driver.msg import (
     JointAngles,
     JointAngle,
@@ -24,6 +23,7 @@ class RelaxedIK:
 
     def __init__(
         self,
+        robot_name='my_gen3',
         update_rate=750,
     ):
         """
@@ -65,7 +65,7 @@ class RelaxedIK:
         info_file_name = robot_info['name']
 
         # # Public constants:
-        self.ROBOT_NAME = info_file_name.split('_')[0]
+        self.ROBOT_NAME = robot_name
         self.OBJECTIVE_MODE = robot_info['objective_mode']
         self.RATE = rospy.Rate(update_rate)
 
@@ -75,30 +75,28 @@ class RelaxedIK:
         # # Public variables:
         self.is_initialized = False
 
-        # # ROS node:
-
         # # Service provider:
 
         # # Service subscriber:
 
         # # Topic publisher:
         self.__joint_angles_solutions = rospy.Publisher(
-            '/relaxed_ik/joint_angle_solutions',
+            'relaxed_ik/joint_angle_solutions',
             JointAngles,
             queue_size=1,
         )
 
+
         # # Topic subscriber:
         rospy.Subscriber(
-            '/relaxed_ik/ee_pose_goals',
+            'relaxed_ik/ee_pose_goals',
             EEPoseGoals,
             self.__ee_pose_goals_callback,
         )
 
-        print('\nRelaxedIK initialized!')
-        print(f'\nRobot: {self.ROBOT_NAME}')
-        print(f'\nObjective mode: {self.OBJECTIVE_MODE}\n')
-        print('\nWaiting for the first goal pose...\n')
+        print(
+            f'\n/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...\n'
+        )
 
     # # Service handlers:
 
@@ -111,7 +109,11 @@ class RelaxedIK:
         if not self.is_initialized:
             self.is_initialized = True
 
-            print('\nFirst goal pose was received!\n')
+            print(
+                f'\n/{self.ROBOT_NAME}/relaxed_ik: first goal pose was received!\n'
+            )
+
+            print(f'\n/{self.ROBOT_NAME}/relaxed_ik: ready.\n')
 
         self.__ee_pose_goals = message
 
@@ -165,15 +167,14 @@ class RelaxedIK:
 
         self.RATE.sleep()
 
+    def node_shutdown(self):
+        """
+        
+        """
 
-def node_shutdown():
-    """
-    
-    """
+        print(f'\n/{self.ROBOT_NAME}/relaxed_ik: node is shutting down...')
 
-    print('\nNode is shutting down...')
-
-    print("\nNode has shut down.")
+        print(f'\n/{self.ROBOT_NAME}/relaxed_ik: nNode has shut down.')
 
 
 def main():
@@ -181,11 +182,21 @@ def main():
     
     """
 
-    # # ROS node:
     rospy.init_node('relaxed_ik')
-    rospy.on_shutdown(node_shutdown)
 
-    relaxed_ik_solver = RelaxedIK(update_rate=1000)
+    kinova_name = rospy.get_param(
+        param_name=f'{rospy.get_name()}/robot_name',
+        default='my_gen3',
+    )
+
+    print('realxed_ik', kinova_name)
+
+    relaxed_ik_solver = RelaxedIK(
+        robot_name=kinova_name,
+        update_rate=1000,
+    )
+
+    rospy.on_shutdown(relaxed_ik_solver.node_shutdown)
 
     while not rospy.is_shutdown():
         relaxed_ik_solver.main_loop()
