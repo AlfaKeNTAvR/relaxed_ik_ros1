@@ -86,16 +86,11 @@ class RelaxedIK:
             queue_size=1,
         )
 
-
         # # Topic subscriber:
         rospy.Subscriber(
             'relaxed_ik/ee_pose_goals',
             EEPoseGoals,
             self.__ee_pose_goals_callback,
-        )
-
-        print(
-            f'\n/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...\n'
         )
 
     # # Service handlers:
@@ -109,11 +104,13 @@ class RelaxedIK:
         if not self.is_initialized:
             self.is_initialized = True
 
-            print(
-                f'\n/{self.ROBOT_NAME}/relaxed_ik: first goal pose was received!\n'
+            rospy.loginfo_once(
+                f'/{self.ROBOT_NAME}/relaxed_ik: first goal pose was received!',
             )
 
-            print(f'\n/{self.ROBOT_NAME}/relaxed_ik: ready.\n')
+            rospy.loginfo_once(
+                f'\033[92m/{self.ROBOT_NAME}/relaxed_ik: ready.\033[0m',
+            )
 
         self.__ee_pose_goals = message
 
@@ -126,6 +123,11 @@ class RelaxedIK:
         """
 
         if not self.is_initialized:
+            rospy.logwarn_throttle(
+                5,
+                f'/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...',
+            )
+
             return
 
         ee_pose_goals = self.__ee_pose_goals.ee_poses
@@ -172,9 +174,13 @@ class RelaxedIK:
         
         """
 
-        print(f'\n/{self.ROBOT_NAME}/relaxed_ik: node is shutting down...')
+        rospy.loginfo_once(
+            f'/{self.ROBOT_NAME}/relaxed_ik: node is shutting down...',
+        )
 
-        print(f'\n/{self.ROBOT_NAME}/relaxed_ik: nNode has shut down.')
+        rospy.loginfo_once(
+            f'/{self.ROBOT_NAME}/relaxed_ik: node has shut down.',
+        )
 
 
 def main():
@@ -182,14 +188,15 @@ def main():
     
     """
 
-    rospy.init_node('relaxed_ik')
+    rospy.init_node(
+        'relaxed_ik',
+        log_level=rospy.INFO,  # TODO: Make this a launch file parameter.
+    )
 
     kinova_name = rospy.get_param(
         param_name=f'{rospy.get_name()}/robot_name',
         default='my_gen3',
     )
-
-    print('realxed_ik', kinova_name)
 
     relaxed_ik_solver = RelaxedIK(
         robot_name=kinova_name,
