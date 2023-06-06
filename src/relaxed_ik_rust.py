@@ -9,6 +9,8 @@ import rospkg
 import rospy
 import yaml
 
+from std_msgs.msg import (Bool)
+
 from relaxed_ik_ros1.msg import (EEPoseGoals)
 from kortex_driver.msg import (
     JointAngles,
@@ -73,7 +75,24 @@ class RelaxedIK:
         self.__ee_pose_goals = EEPoseGoals()
 
         # # Public variables:
-        self.is_initialized = False
+
+        # # Initialization and dependency status topics:
+        self.__is_initialized = False
+        self.__dependency_initialized = False
+        self.__first_goal_received = False
+
+        self.__node_is_initialized = rospy.Publisher(
+            f'/{self.ROBOT_NAME}/relaxed_ik/is_initialized',
+            Bool,
+            queue_size=1,
+        )
+
+        # NOTE: Specify dependency initial False initial status.
+        self.__dependency_status = {}
+
+        # NOTE: Specify dependency is_initialized topic (or any other topic,
+        # which will be available when the dependency node is running properly).
+        self.__dependency_status_topics = {}
 
         # # Service provider:
 
@@ -81,14 +100,14 @@ class RelaxedIK:
 
         # # Topic publisher:
         self.__joint_angles_solutions = rospy.Publisher(
-            'relaxed_ik/joint_angle_solutions',
+            f'/{self.ROBOT_NAME}/relaxed_ik/joint_angle_solutions',
             JointAngles,
             queue_size=1,
         )
 
         # # Topic subscriber:
         rospy.Subscriber(
-            'relaxed_ik/ee_pose_goals',
+            f'/{self.ROBOT_NAME}/relaxed_ik/ee_pose_goals',
             EEPoseGoals,
             self.__ee_pose_goals_callback,
         )
@@ -101,20 +120,93 @@ class RelaxedIK:
 
         """
 
-        if not self.is_initialized:
-            self.is_initialized = True
+        if not self.__first_goal_received:
 
-            rospy.loginfo_once(
+            self.__first_goal_received = True
+
+            rospy.loginfo(
                 f'/{self.ROBOT_NAME}/relaxed_ik: first goal pose was received!',
-            )
-
-            rospy.loginfo_once(
-                f'\033[92m/{self.ROBOT_NAME}/relaxed_ik: ready.\033[0m',
             )
 
         self.__ee_pose_goals = message
 
     # # Private methods:
+    def __check_initialization(self):
+        """Monitors required criteria and sets is_initialized variable.
+
+        Monitors nodes' dependency status by checking if dependency's
+        is_initialized topic has at most one publisher (this ensures that
+        dependency node is alive and does not have any duplicates) and that it
+        publishes True. If dependency's status was True, but get_num_connections
+        is not equal to 1, this means that the connection is lost and emergency
+        actions should be performed.
+
+        Once all dependencies are initialized and additional criteria met, the
+        nodes is_initialized status changes to True. This status can change to
+        False any time to False if some criteria are no longer met.
+        
+        """
+
+        self.__dependency_initialized = True
+
+        for key in self.__dependency_status:
+            if self.__dependency_status_topics[key].get_num_connections() != 1:
+                if self.__dependency_status[key]:
+                    rospy.logerr(
+                        (
+                            f'/{self.ROBOT_NAME}/relaxed_ik: '
+                            f'lost connection to {key}!'
+                        )
+                    )
+
+                    # # Emergency actions on lost connection:
+                    # NOTE (optionally): Add code, which needs to be executed if
+                    # connection to any of dependencies was lost.
+
+                self.__dependency_status[key] = False
+
+            if not self.__dependency_status[key]:
+                self.__dependency_initialized = False
+
+        if not self.__dependency_initialized:
+            waiting_for = ''
+            for key in self.__dependency_status:
+                if not self.__dependency_status[key]:
+                    waiting_for += f'\n- waiting for {key}...'
+
+            rospy.logwarn_throttle(
+                15,
+                (
+                    f'/{self.ROBOT_NAME}/relaxed_ik:'
+                    f'{waiting_for}'
+                    # f'\nMake sure those dependencies are running properly!'
+                ),
+            )
+
+        if not self.__first_goal_received:
+            rospy.logwarn_throttle(
+                15,
+                f'/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...',
+            )
+
+        # NOTE: Add more initialization criterea if needed.
+        if (self.__dependency_initialized):
+            if not self.__is_initialized:
+                rospy.loginfo(
+                    f'\033[92m/{self.ROBOT_NAME}/relaxed_ik: ready.\033[0m',
+                )
+
+                self.__is_initialized = True
+
+        else:
+            if self.__is_initialized:
+                # NOTE (optionally): Add code, which needs to be executed if the
+                # nodes's status changes from True to False.
+                pass
+
+            self.__is_initialized = False
+
+        self.__node_is_initialized.publish(self.__is_initialized)
 
     # # Public methods:
     def main_loop(self):
@@ -122,12 +214,9 @@ class RelaxedIK:
         
         """
 
-        if not self.is_initialized:
-            rospy.logwarn_throttle(
-                5,
-                f'/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...',
-            )
+        self.__check_initialization()
 
+        if not self.__is_initialized:
             return
 
         ee_pose_goals = self.__ee_pose_goals.ee_poses
@@ -193,6 +282,9 @@ def main():
         log_level=rospy.INFO,  # TODO: Make this a launch file parameter.
     )
 
+    rospy.loginfo('\n\n\n\n\n')  # Add whitespaces to separate logs.
+
+    # # ROS parameters:
     kinova_name = rospy.get_param(
         param_name=f'{rospy.get_name()}/robot_name',
         default='my_gen3',
