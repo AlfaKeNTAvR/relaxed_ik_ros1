@@ -1,6 +1,14 @@
 #!/usr/bin/env python
-"""
+"""Implements relaxed_ik rust module for positional control.
 
+TODO: Add detailed description.
+
+Author (s):
+    1. Lorena Genua (lorenagenua@gmail.com), Human-Inspired Robotics (HiRo)
+       lab, Worcester Polytechnic Institute (WPI), 2023.
+    2. Nikita Boguslavskii (bognik3@gmail.com), Human-Inspired Robotics (HiRo)
+       lab, Worcester Polytechnic Institute (WPI), 2023.
+    
 """
 
 import ctypes
