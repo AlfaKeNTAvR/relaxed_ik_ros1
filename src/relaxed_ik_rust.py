@@ -33,7 +33,6 @@ class RelaxedIK:
     def __init__(
         self,
         robot_name,
-        solver_rate,
     ):
         """
         
@@ -57,7 +56,6 @@ class RelaxedIK:
 
         # # Public constants:
         self.ROBOT_NAME = robot_name
-        self.SOLVER_RATE = rospy.Rate(solver_rate)
 
         # # Private variables:
         self.__ee_pose_goals = EEPoseGoals()
@@ -244,8 +242,6 @@ class RelaxedIK:
 
             self.__joint_angles_solutions.publish(joint_angles)
 
-        self.SOLVER_RATE.sleep()
-
     def node_shutdown(self):
         """
         
@@ -280,18 +276,17 @@ def main():
 
     solver_rate = rospy.get_param(
         param_name=f'{rospy.get_name()}/solver_rate',
-        default=750,
+        default=1000,
     )
 
-    relaxed_ik_solver = RelaxedIK(
-        robot_name=kinova_name,
-        solver_rate=solver_rate,
-    )
+    relaxed_ik_solver = RelaxedIK(robot_name=kinova_name,)
 
     rospy.on_shutdown(relaxed_ik_solver.node_shutdown)
+    node_rate = rospy.Rate(solver_rate)
 
     while not rospy.is_shutdown():
         relaxed_ik_solver.main_loop()
+        node_rate.sleep()
 
 
 if __name__ == '__main__':

@@ -1,8 +1,17 @@
 <?xml version="1.0"?>
 <launch>=  
+    <!-- ============================ SETTINGS ============================= -->
     <arg name="robot_name" default="my_gen3"/>
-    <!-- Relaxed IK solver rate [Hz]. -->
-    <arg name="solver_rate" default="750"/>
+
+    <!-- Solver rate (frequency): the frequency [Hz] which rate.sleep() function
+    will attempt to maintain in the main_loop, that is Relaxed IK solver rate
+    [Hz].
+    -->
+    <arg 
+    name="solver_rate" 
+    default="750"/>
+
+    <!-- ======================== END OF SETTINGS ========================== -->
 
 
     <!-- Start relaxed ik -->
