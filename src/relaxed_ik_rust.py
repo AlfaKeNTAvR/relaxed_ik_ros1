@@ -15,7 +15,6 @@ import ctypes
 import os
 import rospkg
 import rospy
-import yaml
 
 from std_msgs.msg import (Bool)
 
@@ -48,9 +47,6 @@ class RelaxedIK:
 
         # # Private constants:
         self.__PATH_TO_SRC = rospkg.RosPack().get_path('relaxed_ik_ros1')
-        self.__ENV_SETTINGS_FILE_PATH = (
-            f'{self.__PATH_TO_SRC}/relaxed_ik_core/config/settings.yaml'
-        )
         os.chdir(f'{self.__PATH_TO_SRC}/relaxed_ik_core')
         self.__LIB = (
             ctypes.cdll.LoadLibrary(
@@ -59,24 +55,8 @@ class RelaxedIK:
         )
         self.__LIB.solve.restype = Opt
 
-        env_settings_file = open(self.__ENV_SETTINGS_FILE_PATH, 'r')
-        env_settings = yaml.load(
-            env_settings_file,
-            Loader=yaml.FullLoader,
-        )
-
-        if 'loaded_robot' in env_settings:
-            robot_info = env_settings['loaded_robot']
-        else:
-            raise NameError(
-                'Please define the relevant information of the robot!'
-            )
-
-        info_file_name = robot_info['name']
-
         # # Public constants:
         self.ROBOT_NAME = robot_name
-        self.OBJECTIVE_MODE = robot_info['objective_mode']
         self.SOLVER_RATE = rospy.Rate(solver_rate)
 
         # # Private variables:
