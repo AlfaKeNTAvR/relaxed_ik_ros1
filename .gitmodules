@@ -1,3 +1,4 @@
 [submodule "relaxed_ik_core"]
 	path = relaxed_ik_core
 	url = https://github.com/AlfaKeNTAvR/relaxed_ik_core.git
+	branch = main
