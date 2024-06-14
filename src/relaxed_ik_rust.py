@@ -19,10 +19,9 @@ import yaml
 
 from std_msgs.msg import (Bool)
 
-from relaxed_ik_ros1.msg import (EEPoseGoals)
-from kortex_driver.msg import (
+from relaxed_ik_ros1.msg import (
+    EEPoseGoals,
     JointAngles,
-    JointAngle,
 )
 
 
@@ -257,10 +256,13 @@ class RelaxedIK:
 
         if xopt:
             for i in range(xopt.length):
-                joint_angle = JointAngle()
-                joint_angle.joint_identifier = i
-                joint_angle.value = xopt.data[i]
-                joint_angles.joint_angles.append(joint_angle)
+                # joint_angle = JointAngle()
+                # joint_angle.joint_identifier = i
+                # joint_angle.value = xopt.data[i]
+                # joint_angles.joint_angles.append(joint_angle)
+                joint_angles.angles.data.append(xopt.data[i])
+
+            joint_angles.header = self.__ee_pose_goals.header
 
             self.__joint_angles_solutions.publish(joint_angles)
 
