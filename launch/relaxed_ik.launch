@@ -9,7 +9,7 @@
     -->
     <arg 
     name="solver_rate" 
-    default="750"/>
+    default="400"/>
 
     <!-- ======================== END OF SETTINGS ========================== -->
 

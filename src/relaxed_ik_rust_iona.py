@@ -232,7 +232,6 @@ class RelaxedIK:
             )
 
         joint_angles = JointAngles()
-        angles = []
 
         if xopt:
             for i in range(xopt.length):
@@ -240,15 +239,6 @@ class RelaxedIK:
                 joint_angle.joint_identifier = i
                 joint_angle.value = xopt.data[i]
                 joint_angles.joint_angles.append(joint_angle)
-                if xopt.length == 8:
-                    if i > 0:
-                        angles.append(xopt.data[i])
-                elif xopt.length == 7:
-                    angles.append(xopt.data[i])
-
-            if xopt.length > 7:
-                chest_position = joint_angles.joint_angles.pop(0)
-                joint_angles.joint_angles.append(chest_position)
 
             self.__joint_angles_solutions.publish(joint_angles)
 
