@@ -17,12 +17,14 @@ import rospkg
 import rospy
 
 from std_msgs.msg import (Bool)
+from std_srvs.srv import (Empty)
 
 from relaxed_ik_ros1.msg import (EEPoseGoals)
 from kortex_driver.msg import (
     JointAngles,
     JointAngle,
 )
+from sensor_msgs.msg import (JointState)
 
 
 class RelaxedIK:
@@ -59,6 +61,7 @@ class RelaxedIK:
 
         # # Private variables:
         self.__ee_pose_goals = EEPoseGoals()
+        self.__current_joint_positions = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         # # Public variables:
 
@@ -81,6 +84,11 @@ class RelaxedIK:
         self.__dependency_status_topics = {}
 
         # # Service provider:
+        rospy.Service(
+            f'/{self.ROBOT_NAME}/relaxed_ik/reset',
+            Empty,
+            self.__reset_handler,
+        )
 
         # # Service subscriber:
 
@@ -98,7 +106,21 @@ class RelaxedIK:
             self.__ee_pose_goals_callback,
         )
 
+        rospy.Subscriber(
+            f'/{self.ROBOT_NAME}/base_feedback/joint_state',
+            JointState,
+            self.__joint_positions_callback,
+        )
+
     # # Service handlers:
+    def __reset_handler(self, request):
+        """
+
+        """
+
+        self.__reset(self.__current_joint_positions)
+
+        return []
 
     # # Topic callbacks:
     def __ee_pose_goals_callback(self, message):
@@ -115,6 +137,13 @@ class RelaxedIK:
             )
 
         self.__ee_pose_goals = message
+
+    def __joint_positions_callback(self, msg):
+        """
+        
+        """
+
+        self.__current_joint_positions = msg.position[0:7]
 
     # # Private methods:
     def __check_initialization(self):
@@ -193,6 +222,18 @@ class RelaxedIK:
             self.__is_initialized = False
 
         self.__node_is_initialized.publish(self.__is_initialized)
+
+    def __reset(self, joint_state):
+        """
+        
+        """
+
+        js_arr = (ctypes.c_double * len(joint_state))()
+
+        for i in range(len(joint_state)):
+            js_arr[i] = joint_state[i]
+
+        self.__LIB.reset(js_arr, len(js_arr))
 
     # # Public methods:
     def main_loop(self):
