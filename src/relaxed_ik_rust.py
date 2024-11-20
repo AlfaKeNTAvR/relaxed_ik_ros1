@@ -15,9 +15,14 @@ import ctypes
 import os
 import rospkg
 import rospy
+import tf2_ros
+import transformations
+import numpy as np
 
 from std_msgs.msg import (Bool)
 from std_srvs.srv import (Empty)
+
+from geometry_msgs.msg import (TransformStamped)
 
 from relaxed_ik_ros1.msg import (EEPoseGoals)
 from kortex_driver.msg import (
@@ -61,7 +66,10 @@ class RelaxedIK:
 
         # # Private variables:
         self.__ee_pose_goals = EEPoseGoals()
-        self.__current_joint_positions = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.__current_joint_positions = None
+
+        self.__kinova_base_link_to_relaxed_ik_origin = TransformStamped()
+        self.__kinova_base_link_to_tool_frame = None
 
         # # Public variables:
 
@@ -76,12 +84,20 @@ class RelaxedIK:
             queue_size=1,
         )
 
-        # NOTE: Specify dependency initial False initial status.
         self.__dependency_status = {}
+        self.__dependency_status_topics = {}
+
+        # NOTE: Specify dependency initial False initial status.
+        self.__dependency_status['kortex_driver'] = False
 
         # NOTE: Specify dependency is_initialized topic (or any other topic,
         # which will be available when the dependency node is running properly).
-        self.__dependency_status_topics = {}
+
+        self.__dependency_status_topics['kortex_driver'] = rospy.Subscriber(
+            f'/{self.ROBOT_NAME}/base_feedback/joint_state',
+            JointState,
+            self.__joint_positions_callback,
+        )
 
         # # Service provider:
         rospy.Service(
@@ -111,6 +127,15 @@ class RelaxedIK:
             JointState,
             self.__joint_positions_callback,
         )
+
+        # # TF broadcaster:
+        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster = (
+            tf2_ros.StaticTransformBroadcaster()
+        )
+
+        # # TF listener:
+        self.__tf_buffer = tf2_ros.Buffer(rospy.Duration(1))
+        tf2_ros.TransformListener(self.__tf_buffer)
 
     # # Service handlers:
     def __reset_handler(self, request):
@@ -142,6 +167,9 @@ class RelaxedIK:
         """
         
         """
+
+        if not self.__dependency_status['kortex_driver']:
+            self.__dependency_status['kortex_driver'] = True
 
         self.__current_joint_positions = msg.position[0:7]
 
@@ -204,14 +232,33 @@ class RelaxedIK:
                 f'/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...',
             )
 
+        # Extract tool_frame translation to base_link:
+        try:
+            self.__kinova_base_link_to_tool_frame = self.__tf_buffer.lookup_transform(
+                f'{self.ROBOT_NAME}/base_link',
+                f'{self.ROBOT_NAME}/tool_frame',
+                rospy.Time(),
+            )
+
+        except (
+            tf2_ros.LookupException,
+            tf2_ros.ConnectivityException,
+            tf2_ros.ExtrapolationException,
+        ):
+            pass
+
         # NOTE: Add more initialization criterea if needed.
-        if (self.__dependency_initialized):
+        if (
+            self.__dependency_initialized
+            and self.__kinova_base_link_to_tool_frame != None
+        ):
             if not self.__is_initialized:
                 rospy.loginfo(
                     f'\033[92m/{self.ROBOT_NAME}/relaxed_ik: ready.\033[0m',
                 )
 
                 self.__is_initialized = True
+                self.__reset(self.__current_joint_positions)
 
         else:
             if self.__is_initialized:
@@ -224,8 +271,8 @@ class RelaxedIK:
         self.__node_is_initialized.publish(self.__is_initialized)
 
     def __reset(self, joint_state):
-        """
-        
+        """Resets Relaxed IK origin to Kinova current joint positions.
+
         """
 
         js_arr = (ctypes.c_double * len(joint_state))()
@@ -234,6 +281,93 @@ class RelaxedIK:
             js_arr[i] = joint_state[i]
 
         self.__LIB.reset(js_arr, len(js_arr))
+
+        self.__update_relaxed_ik_origin_tf()
+
+    def __update_relaxed_ik_origin_tf(self):
+        """
+        
+        """
+
+        # Reset relaxed_ik_origin tf frame to the current Kinova tool_frame.
+        self.__kinova_base_link_to_relaxed_ik_origin.header.stamp = (
+            rospy.Time.now()
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.header.frame_id = (
+            f'/{self.ROBOT_NAME}/base_link'
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.child_frame_id = (
+            f'/{self.ROBOT_NAME}/relaxed_ik_origin'
+        )
+
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.translation.x = (
+            self.__kinova_base_link_to_tool_frame.transform.translation.x
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.translation.y = (
+            self.__kinova_base_link_to_tool_frame.transform.translation.y
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.translation.z = (
+            self.__kinova_base_link_to_tool_frame.transform.translation.z
+        )
+
+        quaternion = np.array(
+            [
+                self.__kinova_base_link_to_tool_frame.transform.rotation.w,
+                self.__kinova_base_link_to_tool_frame.transform.rotation.x,
+                self.__kinova_base_link_to_tool_frame.transform.rotation.y,
+                self.__kinova_base_link_to_tool_frame.transform.rotation.z,
+            ]
+        )
+
+        # Convert quaternion to rotation matrix.
+        rotation_matrix = transformations.quaternion_matrix(quaternion)
+
+        # Extract Y axis from the rotation matrix.
+        y_axis = rotation_matrix[:3, 1]  # Second column is the Y-axis
+
+        # Define rotation angles.
+        angle_y = np.radians(-90)  # Rotate 45° around the Y-axis
+        angle_x = np.radians(-90)  # Rotate 30° around the new X-axis
+
+        # Create quaternions for the rotations.
+        quaternion_y = transformations.quaternion_about_axis(
+            angle_y,
+            y_axis,
+        )  # Rotate around original Y-axis
+        quaternion = transformations.quaternion_multiply(
+            quaternion_y,
+            quaternion,
+        )  # Apply the first rotation
+
+        # Update axes after first rotation.
+        rotation_matrix = transformations.quaternion_matrix(quaternion)
+        new_x_axis = rotation_matrix[:3, 0]  # Updated X-axis
+
+        # Create and apply the second rotation.
+        quaternion_x = transformations.quaternion_about_axis(
+            angle_x,
+            new_x_axis,
+        )  # Rotate around the new X-axis
+        quaternion = transformations.quaternion_multiply(
+            quaternion_x,
+            quaternion,
+        )  # Apply the second rotation
+
+        # Normalize the resulting quaternion.
+        quaternion = transformations.unit_vector(quaternion)
+
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.w = (
+            quaternion[0]
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.x = (
+            quaternion[1]
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.y = (
+            quaternion[2]
+        )
+        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.z = (
+            quaternion[3]
+        )
 
     # # Public methods:
     def main_loop(self):
@@ -282,6 +416,11 @@ class RelaxedIK:
                 joint_angles.joint_angles.append(joint_angle)
 
             self.__joint_angles_solutions.publish(joint_angles)
+
+        # Broadcast Relaxed IK origin:
+        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster.sendTransform(
+            self.__kinova_base_link_to_relaxed_ik_origin
+        )
 
     def node_shutdown(self):
         """
