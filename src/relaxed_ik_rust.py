@@ -68,7 +68,11 @@ class RelaxedIK:
         self.__ee_pose_goals = EEPoseGoals()
         self.__current_joint_positions = None
 
-        self.__kinova_base_link_to_relaxed_ik_origin = TransformStamped()
+        self.__kinova_base_link_to_relaxed_ik_origin = {
+            'translation': TransformStamped(),
+            'rotation': TransformStamped(),
+        }
+        self.__relaxed_ik_origin_to_relaxed_ik_tool = TransformStamped()
         self.__kinova_base_link_to_tool_frame = None
 
         # # Public variables:
@@ -129,7 +133,11 @@ class RelaxedIK:
         )
 
         # # TF broadcaster:
-        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster = (
+        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster = {
+            'translation': tf2_ros.StaticTransformBroadcaster(),
+            'rotation': tf2_ros.StaticTransformBroadcaster(),
+        }
+        self.__relaxed_ik_origin_to_relaxed_ik_tool_broadcaster = (
             tf2_ros.StaticTransformBroadcaster()
         )
 
@@ -148,10 +156,12 @@ class RelaxedIK:
         return []
 
     # # Topic callbacks:
-    def __ee_pose_goals_callback(self, message):
+    def __ee_pose_goals_callback(self, message: EEPoseGoals):
         """
 
         """
+
+        self.__ee_pose_goals = message
 
         if not self.__first_goal_received:
 
@@ -160,8 +170,6 @@ class RelaxedIK:
             rospy.loginfo(
                 f'/{self.ROBOT_NAME}/relaxed_ik: first goal pose was received!',
             )
-
-        self.__ee_pose_goals = message
 
     def __joint_positions_callback(self, msg):
         """
@@ -290,25 +298,74 @@ class RelaxedIK:
         """
 
         # Reset relaxed_ik_origin tf frame to the current Kinova tool_frame.
-        self.__kinova_base_link_to_relaxed_ik_origin.header.stamp = (
-            rospy.Time.now()
-        )
-        self.__kinova_base_link_to_relaxed_ik_origin.header.frame_id = (
-            f'/{self.ROBOT_NAME}/base_link'
-        )
-        self.__kinova_base_link_to_relaxed_ik_origin.child_frame_id = (
-            f'/{self.ROBOT_NAME}/relaxed_ik_origin'
-        )
+        # Translation frame:
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].header.
+            stamp
+        ) = (rospy.Time.now())
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].header.
+            frame_id
+        ) = (f'/{self.ROBOT_NAME}/base_link')
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            child_frame_id
+        ) = (f'/{self.ROBOT_NAME}/relaxed_ik_origin_translation')
 
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.translation.x = (
-            self.__kinova_base_link_to_tool_frame.transform.translation.x
-        )
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.translation.y = (
-            self.__kinova_base_link_to_tool_frame.transform.translation.y
-        )
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.translation.z = (
-            self.__kinova_base_link_to_tool_frame.transform.translation.z
-        )
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.translation.x
+        ) = (self.__kinova_base_link_to_tool_frame.transform.translation.x)
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.translation.y
+        ) = (self.__kinova_base_link_to_tool_frame.transform.translation.y)
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.translation.z
+        ) = (self.__kinova_base_link_to_tool_frame.transform.translation.z)
+
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.rotation.x
+        ) = 0
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.rotation.y
+        ) = 0
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.rotation.z
+        ) = 0
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['translation'].
+            transform.rotation.w
+        ) = 1
+
+        # Rotation frame:
+        (self.__kinova_base_link_to_relaxed_ik_origin['rotation'].header.stamp
+        ) = (rospy.Time.now())
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].header.
+            frame_id
+        ) = (f'/{self.ROBOT_NAME}/base_link')
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].
+            child_frame_id
+        ) = (f'/{self.ROBOT_NAME}/relaxed_ik_origin_rotation')
+
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            translation.x
+        ) = (self.__kinova_base_link_to_tool_frame.transform.translation.x)
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            translation.y
+        ) = (self.__kinova_base_link_to_tool_frame.transform.translation.y)
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            translation.z
+        ) = (self.__kinova_base_link_to_tool_frame.transform.translation.z)
 
         quaternion = np.array(
             [
@@ -356,17 +413,64 @@ class RelaxedIK:
         # Normalize the resulting quaternion.
         quaternion = transformations.unit_vector(quaternion)
 
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.w = (
-            quaternion[0]
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            rotation.w
+        ) = (quaternion[0])
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            rotation.x
+        ) = (quaternion[1])
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            rotation.y
+        ) = (quaternion[2])
+        (
+            self.__kinova_base_link_to_relaxed_ik_origin['rotation'].transform.
+            rotation.z
+        ) = (quaternion[3])
+
+    def __broadcast_relaxed_ik_tool_tf(self):
+        """
+
+        """
+
+        # Reset relaxed_ik_origin tf frame to the current Kinova tool_frame.
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.header.stamp = (
+            rospy.Time.now()
         )
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.x = (
-            quaternion[1]
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.header.frame_id = (
+            f'/{self.ROBOT_NAME}/relaxed_ik_origin_translation'
         )
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.y = (
-            quaternion[2]
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.child_frame_id = (
+            f'/{self.ROBOT_NAME}/relaxed_ik_tool'
         )
-        self.__kinova_base_link_to_relaxed_ik_origin.transform.rotation.z = (
-            quaternion[3]
+
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.translation.x = (
+            self.__ee_pose_goals.ee_poses[0].position.x
+        )
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.translation.y = (
+            self.__ee_pose_goals.ee_poses[0].position.y
+        )
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.translation.z = (
+            self.__ee_pose_goals.ee_poses[0].position.z
+        )
+
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.rotation.w = (
+            self.__ee_pose_goals.ee_poses[0].orientation.w
+        )
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.rotation.x = (
+            self.__ee_pose_goals.ee_poses[0].orientation.x
+        )
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.rotation.y = (
+            self.__ee_pose_goals.ee_poses[0].orientation.y
+        )
+        self.__relaxed_ik_origin_to_relaxed_ik_tool.transform.rotation.z = (
+            self.__ee_pose_goals.ee_poses[0].orientation.z
+        )
+
+        self.__relaxed_ik_origin_to_relaxed_ik_tool_broadcaster.sendTransform(
+            self.__relaxed_ik_origin_to_relaxed_ik_tool
         )
 
     # # Public methods:
@@ -418,9 +522,17 @@ class RelaxedIK:
             self.__joint_angles_solutions.publish(joint_angles)
 
         # Broadcast Relaxed IK origin:
-        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster.sendTransform(
-            self.__kinova_base_link_to_relaxed_ik_origin
-        )
+        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster[
+            'translation'].sendTransform(
+                self.__kinova_base_link_to_relaxed_ik_origin['translation']
+            )
+        self.__kinova_base_link_to_relaxed_ik_origin_broadcaster[
+            'rotation'].sendTransform(
+                self.__kinova_base_link_to_relaxed_ik_origin['rotation']
+            )
+
+        if self.__first_goal_received:
+            self.__broadcast_relaxed_ik_tool_tf()
 
     def node_shutdown(self):
         """
