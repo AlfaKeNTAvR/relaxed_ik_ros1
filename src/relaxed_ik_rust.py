@@ -71,9 +71,6 @@ class RelaxedIK:
         self.__ee_pose_goals = EEPoseGoals()
         self.__current_joint_positions = None
 
-        self.__base_link_to_rik_origin_translation = TransformStamped()
-        self.__base_link_to_rik_origin_rotation = TransformStamped()
-        self.__base_link_to_rik_target = TransformStamped()
         self.__base_link_to_tool_frame = None
 
         # # Public variables:
@@ -133,15 +130,6 @@ class RelaxedIK:
         )
 
         # # TF broadcaster:
-        self.__base_link_to_rik_origin_translation_broadcaster = (
-            tf2_ros.StaticTransformBroadcaster()
-        )
-        self.__base_link_to_rik_origin_rotation_broadcaster = (
-            tf2_ros.StaticTransformBroadcaster()
-        )
-        self.__base_link_to_rik_target_broadcaster = (
-            tf2_ros.StaticTransformBroadcaster()
-        )
 
         # # TF listener:
         self.__tf_buffer = tf2_ros.Buffer(rospy.Duration(1))
@@ -279,7 +267,6 @@ class RelaxedIK:
         self.__LIB.reset(js_arr, len(js_arr))
 
         self.__initialize_ee_pose_goals()
-        self.__update_relaxed_ik_origin_tf()
 
     def __initialize_ee_pose_goals(self):
         """
@@ -287,190 +274,32 @@ class RelaxedIK:
         """
 
         pose_message = Pose()
-        pose_message.position.x = 0
-        pose_message.position.y = 0
-        pose_message.position.z = 0
+        pose_message.position.x = (
+            self.__base_link_to_tool_frame.transform.translation.x
+        )
+        pose_message.position.y = (
+            self.__base_link_to_tool_frame.transform.translation.y
+        )
+        pose_message.position.z = (
+            self.__base_link_to_tool_frame.transform.translation.z
+        )
 
-        pose_message.orientation.w = 1
-        pose_message.orientation.x = 0
-        pose_message.orientation.y = 0
-        pose_message.orientation.z = 0
+        pose_message.orientation.w = (
+            self.__base_link_to_tool_frame.transform.rotation.w
+        )
+        pose_message.orientation.x = (
+            self.__base_link_to_tool_frame.transform.rotation.x
+        )
+        pose_message.orientation.y = (
+            self.__base_link_to_tool_frame.transform.rotation.y
+        )
+        pose_message.orientation.z = (
+            self.__base_link_to_tool_frame.transform.rotation.z
+        )
 
         self.__ee_pose_goals = EEPoseGoals()
         self.__ee_pose_goals.ee_poses.append(pose_message)
         self.__ee_pose_goals.ee_poses.append(pose_message)
-
-    def __update_relaxed_ik_origin_tf(self):
-        """
-        
-        """
-
-        # Reset relaxed_ik_origin tf frame to the current Kinova tool_frame.
-        # Translation frame:
-        self.__base_link_to_rik_origin_translation.header.stamp = (
-            rospy.Time.now()
-        )
-        self.__base_link_to_rik_origin_translation.header.frame_id = (
-            f'/{self.ROBOT_NAME}/base_link'
-        )
-        self.__base_link_to_rik_origin_translation.child_frame_id = (
-            f'/{self.ROBOT_NAME}/relaxed_ik_origin_translation'
-        )
-
-        self.__base_link_to_rik_origin_translation.transform.translation.x = (
-            self.__base_link_to_tool_frame.transform.translation.x
-        )
-        self.__base_link_to_rik_origin_translation.transform.translation.y = (
-            self.__base_link_to_tool_frame.transform.translation.y
-        )
-        self.__base_link_to_rik_origin_translation.transform.translation.z = (
-            self.__base_link_to_tool_frame.transform.translation.z
-        )
-
-        self.__base_link_to_rik_origin_translation.transform.rotation.w = 1
-        self.__base_link_to_rik_origin_translation.transform.rotation.x = 0
-        self.__base_link_to_rik_origin_translation.transform.rotation.y = 0
-        self.__base_link_to_rik_origin_translation.transform.rotation.z = 0
-
-        #
-        self.__base_link_to_rik_origin_rotation.header.stamp = (
-            rospy.Time.now()
-        )
-        self.__base_link_to_rik_origin_rotation.header.frame_id = (
-            f'/{self.ROBOT_NAME}/base_link'
-        )
-        self.__base_link_to_rik_origin_rotation.child_frame_id = (
-            f'/{self.ROBOT_NAME}/relaxed_ik_origin_rotation'
-        )
-
-        self.__base_link_to_rik_origin_rotation.transform.translation.x = (
-            self.__base_link_to_tool_frame.transform.translation.x
-        )
-        self.__base_link_to_rik_origin_rotation.transform.translation.y = (
-            self.__base_link_to_tool_frame.transform.translation.y
-        )
-        self.__base_link_to_rik_origin_rotation.transform.translation.z = (
-            self.__base_link_to_tool_frame.transform.translation.z
-        )
-
-        quaternion = np.array(
-            [
-                self.__base_link_to_tool_frame.transform.rotation.w,
-                self.__base_link_to_tool_frame.transform.rotation.x,
-                self.__base_link_to_tool_frame.transform.rotation.y,
-                self.__base_link_to_tool_frame.transform.rotation.z,
-            ]
-        )
-
-        # Convert quaternion to rotation matrix.
-        rotation_matrix = transformations.quaternion_matrix(quaternion)
-
-        # Extract Y axis from the rotation matrix.
-        y_axis = rotation_matrix[:3, 1]  # Second column is the Y-axis
-
-        # Define rotation angles.
-        angle_y = np.radians(-90)  # Rotate 45° around the Y-axis
-        angle_x = np.radians(-90)  # Rotate 30° around the new X-axis
-
-        # Create quaternions for the rotations.
-        quaternion_y = transformations.quaternion_about_axis(
-            angle_y,
-            y_axis,
-        )  # Rotate around original Y-axis
-        quaternion = transformations.quaternion_multiply(
-            quaternion_y,
-            quaternion,
-        )  # Apply the first rotation
-
-        # Update axes after first rotation.
-        rotation_matrix = transformations.quaternion_matrix(quaternion)
-        new_x_axis = rotation_matrix[:3, 0]  # Updated X-axis
-
-        # Create and apply the second rotation.
-        quaternion_x = transformations.quaternion_about_axis(
-            angle_x,
-            new_x_axis,
-        )  # Rotate around the new X-axis
-        quaternion = transformations.quaternion_multiply(
-            quaternion_x,
-            quaternion,
-        )  # Apply the second rotation
-
-        # Normalize the resulting quaternion.
-        quaternion = transformations.unit_vector(quaternion)
-
-        self.__base_link_to_rik_origin_rotation.transform.rotation.w = (
-            quaternion[0]
-        )
-        self.__base_link_to_rik_origin_rotation.transform.rotation.x = (
-            quaternion[1]
-        )
-        self.__base_link_to_rik_origin_rotation.transform.rotation.y = (
-            quaternion[2]
-        )
-        self.__base_link_to_rik_origin_rotation.transform.rotation.z = (
-            quaternion[3]
-        )
-
-    def __broadcast_relaxed_ik_tool_tf(self):
-        """
-        
-        """
-
-        # Reset relaxed_ik_origin tf frame to the current Kinova tool_frame.
-        self.__base_link_to_rik_target.header.stamp = (rospy.Time.now())
-        self.__base_link_to_rik_target.header.frame_id = (
-            f'/{self.ROBOT_NAME}/base_link'
-        )
-        self.__base_link_to_rik_target.child_frame_id = (
-            f'/{self.ROBOT_NAME}/relaxed_ik_target'
-        )
-
-        self.__base_link_to_rik_target.transform.translation.x = (
-            self.__base_link_to_rik_origin_translation.transform.translation.x
-            + self.__ee_pose_goals.ee_poses[0].position.x
-        )
-        self.__base_link_to_rik_target.transform.translation.y = (
-            self.__base_link_to_rik_origin_translation.transform.translation.y
-            + self.__ee_pose_goals.ee_poses[0].position.y
-        )
-        self.__base_link_to_rik_target.transform.translation.z = (
-            self.__base_link_to_rik_origin_translation.transform.translation.z
-            + self.__ee_pose_goals.ee_poses[0].position.z
-        )
-
-        # Convert orienation:
-        quaternion = np.array(
-            [
-                self.__ee_pose_goals.ee_poses[0].orientation.w,
-                self.__ee_pose_goals.ee_poses[0].orientation.x,
-                self.__ee_pose_goals.ee_poses[0].orientation.y,
-                self.__ee_pose_goals.ee_poses[0].orientation.z,
-            ]
-        )
-
-        quaternion_rotation = np.array(
-            [
-                self.__base_link_to_rik_origin_rotation.transform.rotation.w,
-                self.__base_link_to_rik_origin_rotation.transform.rotation.x,
-                self.__base_link_to_rik_origin_rotation.transform.rotation.y,
-                self.__base_link_to_rik_origin_rotation.transform.rotation.z,
-            ]
-        )
-
-        quaternion = transformations.quaternion_multiply(
-            quaternion_rotation,
-            quaternion,
-        )
-
-        self.__base_link_to_rik_target.transform.rotation.w = (quaternion[0])
-        self.__base_link_to_rik_target.transform.rotation.x = (quaternion[1])
-        self.__base_link_to_rik_target.transform.rotation.y = (quaternion[2])
-        self.__base_link_to_rik_target.transform.rotation.z = (quaternion[3])
-
-        self.__base_link_to_rik_target_broadcaster.sendTransform(
-            self.__base_link_to_rik_target
-        )
 
     # # Public methods:
     def main_loop(self):
@@ -519,16 +348,6 @@ class RelaxedIK:
                 joint_angles.joint_angles.append(joint_angle)
 
             self.__joint_angles_solutions.publish(joint_angles)
-
-        # Broadcast Relaxed IK origin:
-        self.__base_link_to_rik_origin_translation_broadcaster.sendTransform(
-            self.__base_link_to_rik_origin_translation
-        )
-        self.__base_link_to_rik_origin_rotation_broadcaster.sendTransform(
-            self.__base_link_to_rik_origin_rotation
-        )
-
-        self.__broadcast_relaxed_ik_tool_tf()
 
     def node_shutdown(self):
         """
