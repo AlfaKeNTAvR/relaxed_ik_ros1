@@ -237,11 +237,20 @@ class RelaxedIK:
 
         # Extract tool_frame translation to base_link:
         try:
-            self.__base_link_to_tool_frame = self.__tf_buffer.lookup_transform(
+            transform = self.__tf_buffer.lookup_transform(
                 f'{self.ROBOT_NAME}/base_link',
                 f'{self.ROBOT_NAME}/tool_frame',
                 rospy.Time(),
             )
+
+            # Protection against kinova/tool_frame not fully loaded initial
+            # position (fully extended up).
+            if (
+                abs(transform.transform.translation.x) > 0.005
+                and abs(transform.transform.translation.y - 0.025) > 0.005
+                and abs(transform.transform.translation.z - 1.307) > 0.005
+            ):
+                self.__base_link_to_tool_frame = transform
 
         except (
             tf2_ros.LookupException,
@@ -286,6 +295,11 @@ class RelaxedIK:
         self.__LIB.reset(js_arr, len(js_arr))
 
         self.__initialize_ee_pose_goals()
+
+        rospy.logwarn(
+            (f'/{self.ROBOT_NAME}/relaxed_ik: '
+             f'relaxed_ik was reset.')
+        )
 
     def __initialize_ee_pose_goals(self):
         """
