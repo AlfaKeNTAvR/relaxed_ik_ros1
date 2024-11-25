@@ -130,6 +130,7 @@ class RelaxedIK:
         )
 
         # # TF broadcaster:
+        self.__target_pose_broadcaster = tf2_ros.StaticTransformBroadcaster()
 
         # # TF listener:
         self.__tf_buffer = tf2_ros.Buffer(rospy.Duration(1))
@@ -151,7 +152,25 @@ class RelaxedIK:
 
         """
 
-        self.__ee_pose_goals = message
+        # Normalize target quaternion:
+        ee_pose_goals_quaternion = np.array(
+            [
+                message.ee_poses[0].orientation.w,
+                message.ee_poses[0].orientation.x,
+                message.ee_poses[0].orientation.y,
+                message.ee_poses[0].orientation.z,
+            ]
+        )
+        ee_pose_goals_quaternion = transformations.unit_vector(
+            ee_pose_goals_quaternion
+        )
+        ee_pose_goals = message
+        ee_pose_goals.ee_poses[0].orientation.w = ee_pose_goals_quaternion[0]
+        ee_pose_goals.ee_poses[0].orientation.x = ee_pose_goals_quaternion[1]
+        ee_pose_goals.ee_poses[0].orientation.y = ee_pose_goals_quaternion[2]
+        ee_pose_goals.ee_poses[0].orientation.z = ee_pose_goals_quaternion[3]
+
+        self.__ee_pose_goals = ee_pose_goals
 
     def __joint_positions_callback(self, msg):
         """
@@ -301,6 +320,43 @@ class RelaxedIK:
         self.__ee_pose_goals.ee_poses.append(pose_message)
         self.__ee_pose_goals.ee_poses.append(pose_message)
 
+    def __broadcast_target_pose(self):
+        """
+        
+        """
+
+        transform_stamped = TransformStamped()
+        transform_stamped.header.stamp = rospy.Time.now()
+        transform_stamped.header.frame_id = (f'/{self.ROBOT_NAME}/base_link')
+        transform_stamped.child_frame_id = (
+            f'/{self.ROBOT_NAME}/relaxed_ik_target'
+        )
+
+        transform_stamped.transform.translation.x = (
+            self.__ee_pose_goals.ee_poses[0].position.x
+        )
+        transform_stamped.transform.translation.y = (
+            self.__ee_pose_goals.ee_poses[0].position.y
+        )
+        transform_stamped.transform.translation.z = (
+            self.__ee_pose_goals.ee_poses[0].position.z
+        )
+
+        transform_stamped.transform.rotation.x = (
+            self.__ee_pose_goals.ee_poses[0].orientation.x
+        )
+        transform_stamped.transform.rotation.y = (
+            self.__ee_pose_goals.ee_poses[0].orientation.y
+        )
+        transform_stamped.transform.rotation.z = (
+            self.__ee_pose_goals.ee_poses[0].orientation.z
+        )
+        transform_stamped.transform.rotation.w = (
+            self.__ee_pose_goals.ee_poses[0].orientation.w
+        )
+
+        self.__target_pose_broadcaster.sendTransform(transform_stamped)
+
     # # Public methods:
     def main_loop(self):
         """
@@ -348,6 +404,8 @@ class RelaxedIK:
                 joint_angles.joint_angles.append(joint_angle)
 
             self.__joint_angles_solutions.publish(joint_angles)
+
+        self.__broadcast_target_pose()
 
     def node_shutdown(self):
         """
