@@ -15,14 +15,24 @@ import ctypes
 import os
 import rospkg
 import rospy
+import tf2_ros
+import transformations
+import numpy as np
 
 from std_msgs.msg import (Bool)
+from std_srvs.srv import (Empty)
+
+from geometry_msgs.msg import (
+    TransformStamped,
+    Pose,
+)
 
 from relaxed_ik_ros1.msg import (EEPoseGoals)
 from kortex_driver.msg import (
     JointAngles,
     JointAngle,
 )
+from sensor_msgs.msg import (JointState)
 
 
 class RelaxedIK:
@@ -59,13 +69,15 @@ class RelaxedIK:
 
         # # Private variables:
         self.__ee_pose_goals = EEPoseGoals()
+        self.__current_joint_positions = None
+
+        self.__base_link_to_tool_frame = None
 
         # # Public variables:
 
         # # Initialization and dependency status topics:
         self.__is_initialized = False
         self.__dependency_initialized = False
-        self.__first_goal_received = False
 
         self.__node_is_initialized = rospy.Publisher(
             f'/{self.ROBOT_NAME}/relaxed_ik/is_initialized',
@@ -73,14 +85,27 @@ class RelaxedIK:
             queue_size=1,
         )
 
-        # NOTE: Specify dependency initial False initial status.
         self.__dependency_status = {}
+        self.__dependency_status_topics = {}
+
+        # NOTE: Specify dependency initial False initial status.
+        self.__dependency_status['kortex_driver'] = False
 
         # NOTE: Specify dependency is_initialized topic (or any other topic,
         # which will be available when the dependency node is running properly).
-        self.__dependency_status_topics = {}
+
+        self.__dependency_status_topics['kortex_driver'] = rospy.Subscriber(
+            f'/{self.ROBOT_NAME}/base_feedback/joint_state',
+            JointState,
+            self.__joint_positions_callback,
+        )
 
         # # Service provider:
+        rospy.Service(
+            f'/{self.ROBOT_NAME}/relaxed_ik/reset',
+            Empty,
+            self.__reset_handler,
+        )
 
         # # Service subscriber:
 
@@ -98,23 +123,64 @@ class RelaxedIK:
             self.__ee_pose_goals_callback,
         )
 
+        rospy.Subscriber(
+            f'/{self.ROBOT_NAME}/base_feedback/joint_state',
+            JointState,
+            self.__joint_positions_callback,
+        )
+
+        # # TF broadcaster:
+        self.__target_pose_broadcaster = tf2_ros.StaticTransformBroadcaster()
+
+        # # TF listener:
+        self.__tf_buffer = tf2_ros.Buffer(rospy.Duration(1))
+        tf2_ros.TransformListener(self.__tf_buffer)
+
     # # Service handlers:
+    def __reset_handler(self, request):
+        """
+
+        """
+
+        self.__reset(self.__current_joint_positions)
+
+        return []
 
     # # Topic callbacks:
-    def __ee_pose_goals_callback(self, message):
+    def __ee_pose_goals_callback(self, message: EEPoseGoals):
         """
 
         """
 
-        if not self.__first_goal_received:
+        # Normalize target quaternion:
+        ee_pose_goals_quaternion = np.array(
+            [
+                message.ee_poses[0].orientation.w,
+                message.ee_poses[0].orientation.x,
+                message.ee_poses[0].orientation.y,
+                message.ee_poses[0].orientation.z,
+            ]
+        )
+        ee_pose_goals_quaternion = transformations.unit_vector(
+            ee_pose_goals_quaternion
+        )
+        ee_pose_goals = message
+        ee_pose_goals.ee_poses[0].orientation.w = ee_pose_goals_quaternion[0]
+        ee_pose_goals.ee_poses[0].orientation.x = ee_pose_goals_quaternion[1]
+        ee_pose_goals.ee_poses[0].orientation.y = ee_pose_goals_quaternion[2]
+        ee_pose_goals.ee_poses[0].orientation.z = ee_pose_goals_quaternion[3]
 
-            self.__first_goal_received = True
+        self.__ee_pose_goals = ee_pose_goals
 
-            rospy.loginfo(
-                f'/{self.ROBOT_NAME}/relaxed_ik: first goal pose was received!',
-            )
+    def __joint_positions_callback(self, msg):
+        """
+        
+        """
 
-        self.__ee_pose_goals = message
+        if not self.__dependency_status['kortex_driver']:
+            self.__dependency_status['kortex_driver'] = True
+
+        self.__current_joint_positions = msg.position[0:7]
 
     # # Private methods:
     def __check_initialization(self):
@@ -169,20 +235,42 @@ class RelaxedIK:
                 ),
             )
 
-        if not self.__first_goal_received:
-            rospy.logwarn_throttle(
-                15,
-                f'/{self.ROBOT_NAME}/relaxed_ik: waiting for the first goal pose...',
+        # Extract tool_frame translation to base_link:
+        try:
+            transform = self.__tf_buffer.lookup_transform(
+                f'{self.ROBOT_NAME}/base_link',
+                f'{self.ROBOT_NAME}/tool_frame',
+                rospy.Time(),
             )
 
+            # Protection against kinova/tool_frame not fully loaded initial
+            # position (fully extended up).
+            if (
+                abs(transform.transform.translation.x) > 0.005
+                and abs(transform.transform.translation.y - 0.025) > 0.005
+                and abs(transform.transform.translation.z - 1.307) > 0.005
+            ):
+                self.__base_link_to_tool_frame = transform
+
+        except (
+            tf2_ros.LookupException,
+            tf2_ros.ConnectivityException,
+            tf2_ros.ExtrapolationException,
+        ):
+            pass
+
         # NOTE: Add more initialization criterea if needed.
-        if (self.__dependency_initialized):
+        if (
+            self.__dependency_initialized
+            and self.__base_link_to_tool_frame != None
+        ):
             if not self.__is_initialized:
                 rospy.loginfo(
                     f'\033[92m/{self.ROBOT_NAME}/relaxed_ik: ready.\033[0m',
                 )
 
                 self.__is_initialized = True
+                self.__reset(self.__current_joint_positions)
 
         else:
             if self.__is_initialized:
@@ -193,6 +281,95 @@ class RelaxedIK:
             self.__is_initialized = False
 
         self.__node_is_initialized.publish(self.__is_initialized)
+
+    def __reset(self, joint_state):
+        """Resets Relaxed IK origin to Kinova current joint positions.
+
+        """
+
+        js_arr = (ctypes.c_double * len(joint_state))()
+
+        for i in range(len(joint_state)):
+            js_arr[i] = joint_state[i]
+
+        self.__LIB.reset(js_arr, len(js_arr))
+
+        self.__initialize_ee_pose_goals()
+
+        rospy.logwarn(
+            (f'/{self.ROBOT_NAME}/relaxed_ik: '
+             f'relaxed_ik was reset.')
+        )
+
+    def __initialize_ee_pose_goals(self):
+        """
+        
+        """
+
+        pose_message = Pose()
+        pose_message.position.x = (
+            self.__base_link_to_tool_frame.transform.translation.x
+        )
+        pose_message.position.y = (
+            self.__base_link_to_tool_frame.transform.translation.y
+        )
+        pose_message.position.z = (
+            self.__base_link_to_tool_frame.transform.translation.z
+        )
+
+        pose_message.orientation.w = (
+            self.__base_link_to_tool_frame.transform.rotation.w
+        )
+        pose_message.orientation.x = (
+            self.__base_link_to_tool_frame.transform.rotation.x
+        )
+        pose_message.orientation.y = (
+            self.__base_link_to_tool_frame.transform.rotation.y
+        )
+        pose_message.orientation.z = (
+            self.__base_link_to_tool_frame.transform.rotation.z
+        )
+
+        self.__ee_pose_goals = EEPoseGoals()
+        self.__ee_pose_goals.ee_poses.append(pose_message)
+        self.__ee_pose_goals.ee_poses.append(pose_message)
+
+    def __broadcast_target_pose(self):
+        """
+        
+        """
+
+        transform_stamped = TransformStamped()
+        transform_stamped.header.stamp = rospy.Time.now()
+        transform_stamped.header.frame_id = (f'/{self.ROBOT_NAME}/base_link')
+        transform_stamped.child_frame_id = (
+            f'/{self.ROBOT_NAME}/relaxed_ik_target'
+        )
+
+        transform_stamped.transform.translation.x = (
+            self.__ee_pose_goals.ee_poses[0].position.x
+        )
+        transform_stamped.transform.translation.y = (
+            self.__ee_pose_goals.ee_poses[0].position.y
+        )
+        transform_stamped.transform.translation.z = (
+            self.__ee_pose_goals.ee_poses[0].position.z
+        )
+
+        transform_stamped.transform.rotation.x = (
+            self.__ee_pose_goals.ee_poses[0].orientation.x
+        )
+        transform_stamped.transform.rotation.y = (
+            self.__ee_pose_goals.ee_poses[0].orientation.y
+        )
+        transform_stamped.transform.rotation.z = (
+            self.__ee_pose_goals.ee_poses[0].orientation.z
+        )
+        transform_stamped.transform.rotation.w = (
+            self.__ee_pose_goals.ee_poses[0].orientation.w
+        )
+
+        self.__target_pose_broadcaster.sendTransform(transform_stamped)
 
     # # Public methods:
     def main_loop(self):
@@ -241,6 +418,8 @@ class RelaxedIK:
                 joint_angles.joint_angles.append(joint_angle)
 
             self.__joint_angles_solutions.publish(joint_angles)
+
+        self.__broadcast_target_pose()
 
     def node_shutdown(self):
         """
