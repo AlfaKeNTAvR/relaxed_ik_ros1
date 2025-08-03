@@ -1,22 +1,16 @@
 <?xml version="1.0"?>
-<launch>=  
+<launch>
     <!-- ============================ SETTINGS ============================= -->
     <arg name="robot_name" default="my_gen3"/>
-
-    <!-- Solver rate (frequency): the frequency [Hz] which rate.sleep() function
-    will attempt to maintain in the main_loop, that is Relaxed IK solver rate
-    [Hz].
-    -->
-    <arg 
-    name="solver_rate" 
-    default="750"/>
+    <arg name="solver_rate" default="750"/>
+    <arg name="settings_file" default="settings.yaml"/>
 
     <!-- ======================== END OF SETTINGS ========================== -->
 
-
-    <!-- Start relaxed ik -->
+    <!-- Start Relaxed IK node -->
     <node pkg="relaxed_ik_ros1" type="relaxed_ik_rust.py" name="relaxed_ik" output="screen">
         <param name="robot_name" value="$(arg robot_name)"/>
         <param name="solver_rate" value="$(arg solver_rate)"/>
+        <param name="settings_file" value="$(arg settings_file)"/>
     </node>
 </launch>

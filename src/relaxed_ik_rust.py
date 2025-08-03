@@ -62,6 +62,22 @@ class RelaxedIK:
                 f'{self.__PATH_TO_SRC}/relaxed_ik_core/target/debug/librelaxed_ik_lib.so'
             )
         )
+        self.__LIB.initialize_relaxed_ik.argtypes = [
+            ctypes.c_char_p, ctypes.c_int
+        ]
+        self.__LIB.initialize_relaxed_ik.restype = None
+
+        settings_file = rospy.get_param(
+            param_name=f'{rospy.get_name()}/settings_file',
+            default='settings.yaml'
+        )
+
+        settings_file_bytes = settings_file.encode('utf-8')
+
+        self.__LIB.initialize_relaxed_ik(
+            ctypes.c_char_p(settings_file_bytes),
+            1  # mode=1 for RelaxedIK
+        )
         self.__LIB.solve.restype = Opt
 
         # # Public constants:
