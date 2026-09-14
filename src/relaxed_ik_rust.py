@@ -147,6 +147,7 @@ class RelaxedIK:
 
         # # TF broadcaster:
         self.__target_pose_broadcaster = tf2_ros.StaticTransformBroadcaster()
+        self.__last_broadcast_target_pose = None
 
         # # TF listener:
         self.__tf_buffer = tf2_ros.Buffer(rospy.Duration(1))
@@ -354,6 +355,25 @@ class RelaxedIK:
         """
         
         """
+
+        target_pose = self.__ee_pose_goals.ee_poses[0]
+        target_pose_values = (
+            target_pose.position.x,
+            target_pose.position.y,
+            target_pose.position.z,
+            target_pose.orientation.x,
+            target_pose.orientation.y,
+            target_pose.orientation.z,
+            target_pose.orientation.w,
+        )
+
+        # Static transforms are latched, so resend only when the target changes.
+        # Resending every solver cycle (750 Hz) flooded /tf_static, and every TF
+        # listener on the robot had to process each message.
+        if target_pose_values == self.__last_broadcast_target_pose:
+            return
+
+        self.__last_broadcast_target_pose = target_pose_values
 
         transform_stamped = TransformStamped()
         transform_stamped.header.stamp = rospy.Time.now()
