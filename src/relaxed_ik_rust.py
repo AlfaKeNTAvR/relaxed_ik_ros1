@@ -83,9 +83,33 @@ class RelaxedIK:
         # # Public constants:
         self.ROBOT_NAME = robot_name
 
+        # Per joint speed ceiling used to rate limit the published solution.
+        # Mirrors velocity_limits in
+        # relaxed_ik_core/config/info_files/kortex_info.yaml, which is the
+        # source of truth for the solver itself.
+        self.JOINT_SPEED_LIMITS = (
+            1.3963,
+            1.3963,
+            1.3963,
+            1.3963,
+            1.2218,
+            1.2218,
+            1.2218,
+        )
+
+        # A stalled main loop must not bank up an unbounded step allowance, so
+        # the timestep used for rate limiting is capped no matter how long the
+        # previous iteration actually took.
+        self.MAXIMUM_TIMESTEP = 0.05
+
         # # Private variables:
         self.__ee_pose_goals = EEPoseGoals()
         self.__current_joint_positions = None
+
+        # Previous published solution and its stamp, used as the origin that
+        # the next solution is rate limited against.
+        self.__last_solution = None
+        self.__last_solution_stamp = None
 
         self.__base_link_to_tool_frame = None
 
@@ -311,12 +335,77 @@ class RelaxedIK:
 
         self.__LIB.reset(js_arr, len(js_arr))
 
+        # The solver is now seeded at the measured configuration, so the rate
+        # limiter origin has to move there too. Leaving a stale origin behind
+        # would throttle the first solves after a reset for no reason.
+        self.__last_solution = list(joint_state)
+        self.__last_solution_stamp = rospy.Time.now()
+
         self.__initialize_ee_pose_goals()
 
         rospy.logwarn(
             (f'/{self.ROBOT_NAME}/relaxed_ik: '
              f'relaxed_ik was reset.')
         )
+
+    def __rate_limit_solution(self, solution):
+        """Caps how fast the published joint solution is allowed to move.
+
+        relaxed_ik integrates from its own previous output, so it steps
+        discontinuously whenever that output is projected onto the joint
+        bounds. That happens on the first solve after a reset if the arm is
+        parked outside the configured limits, and downstream those steps
+        become large PID setpoint jumps.
+
+        The whole joint step is scaled by a single factor rather than each
+        joint being clipped on its own, so the direction of travel in joint
+        space is preserved and only the speed along it changes.
+
+        """
+
+        now = rospy.Time.now()
+
+        if (
+            self.__last_solution is None
+            or len(self.__last_solution) != len(solution)
+        ):
+            self.__last_solution = list(solution)
+            self.__last_solution_stamp = now
+
+            return list(solution)
+
+        timestep = (now - self.__last_solution_stamp).to_sec()
+        timestep = max(0.0, min(timestep, self.MAXIMUM_TIMESTEP))
+
+        scale = 1.0
+
+        for joint_index, value in enumerate(solution):
+            maximum_delta = self.JOINT_SPEED_LIMITS[joint_index] * timestep
+            delta = abs(value - self.__last_solution[joint_index])
+
+            if delta > maximum_delta:
+                scale = min(scale, maximum_delta / delta)
+
+        limited_solution = [
+            self.__last_solution[joint_index]
+            + (value - self.__last_solution[joint_index]) * scale
+            for joint_index, value in enumerate(solution)
+        ]
+
+        if scale < 1.0:
+            rospy.logwarn_throttle(
+                5,
+                (
+                    f'/{self.ROBOT_NAME}/relaxed_ik: '
+                    f'solution rate limited to {round(scale, 3)} of the '
+                    f'requested step.'
+                ),
+            )
+
+        self.__last_solution = limited_solution
+        self.__last_solution_stamp = now
+
+        return limited_solution
 
     def __initialize_ee_pose_goals(self):
         """
@@ -447,10 +536,14 @@ class RelaxedIK:
         joint_angles = JointAngles()
 
         if xopt:
-            for i in range(xopt.length):
+            solution = self.__rate_limit_solution(
+                [xopt.data[i] for i in range(xopt.length)]
+            )
+
+            for i in range(len(solution)):
                 joint_angle = JointAngle()
                 joint_angle.joint_identifier = i
-                joint_angle.value = xopt.data[i]
+                joint_angle.value = solution[i]
                 joint_angles.joint_angles.append(joint_angle)
 
             self.__joint_angles_solutions.publish(joint_angles)
