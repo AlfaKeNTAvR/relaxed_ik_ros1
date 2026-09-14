@@ -13,7 +13,7 @@ from std_srvs.srv import SetBool
 
 # === Get ROS parameter for arm side ===
 rospy.init_node('rviz_viewer', anonymous=True)
-arm_side = rospy.get_param('~arm_side', 'right_arm')  # Default to right_arm
+arm_side = rospy.get_param('~arm_side', 'left_arm')  # Default to right_arm
 
 # Set color based on arm
 if arm_side == 'left_arm':
