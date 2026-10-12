@@ -285,11 +285,12 @@ class RelaxedIK:
             )
 
             # Protection against kinova/tool_frame not fully loaded initial
-            # position (fully extended up).
+            # position (fully extended up). Only that exact pose is rejected,
+            # so any coordinate differing from it means the pose is real.
             if (
                 abs(transform.transform.translation.x) > 0.005
-                and abs(transform.transform.translation.y - 0.025) > 0.005
-                and abs(transform.transform.translation.z - 1.307) > 0.005
+                or abs(transform.transform.translation.y - 0.025) > 0.005
+                or abs(transform.transform.translation.z - 1.307) > 0.005
             ):
                 self.__base_link_to_tool_frame = transform
 
